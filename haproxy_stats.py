@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse
+import csv
 import socket
 import sys
 
@@ -37,47 +38,58 @@ class HAProxySocket:
         self.sock.close()
 
 
-def discovery(socket_path='/var/run/haproxysock'):
-    haproxy = HAProxySocket(socket_path)
+def discovery(args):
+    haproxy = HAProxySocket(args.socket_path)
     results = haproxy.cli('show stats')
 
     print(results)
 
 
-def get_all_stats(socket_path='/var/run/haproxysock'):
-    haproxy = HAProxySocket(socket_path)
+def get_all_metrics(args):
+    haproxy = HAProxySocket(args.socket_path)
     info = haproxy.cli('show info')
-    stats = haproxy.cli('show stats')
+    metrics = haproxy.cli('show stats')
 
-    print(info, stats)
-
-
-def get_one_stats(socket_path='/var/run/haproxysock'):
-    haproxy = HAProxySocket(socket_path)
-    stats = haproxy.cli('show stats')
-
-    print(stats)
+    print(info, metrics)
 
 
-def send_command(command, socket_path='/var/run/haproxysock'):
-    haproxy = HAProxySocket(socket_path)
-    results = haproxy.cli(command)
+def get_one_metric(args):
+    haproxy = HAProxySocket(args.socket_path)
+    results = haproxy.cli('show stats')
+
+    print(results)
+
+
+def send_command(args):
+    haproxy = HAProxySocket(args.socket_path)
+    results = haproxy.cli(args.command)
 
     print(results)
 
 
 def main():
-    print('Discovery Output')
-    discovery()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-s", "--socket", help="The file path to the HAProxy socket")
+    subparsers = parser.add_subparsers("sub-command help")
 
-    print('All Statistics')
-    get_all_stats()
+    discovery_parser = subparsers.add_parser('discovery', help="Discover the available HAProxy endpoints")
+    discovery_parser.set_defaults(func=discovery)
 
-    print('One Statistic')
-    get_one_stats()
+    all_metrics_parser = subparsers.add_parser('all metrics')
+    all_metrics_parser.add_argument("-a", "--all-metrics")
+    all_metrics_parser.set_defaults(func=get_all_metrics)
 
-    print('Send Command')
-    send_command('show info')
+    one_metric_parser = subparsers.add_parser('one metric')
+    one_metric_parser.add_argument("-e", "--endpoint", type=str, help="The frontend, backend, or server metrics")
+    one_metric_parser.add_argument('-m', '--metric', type=str, help="The particular metric being gathered")
+    one_metric_parser.set_defaults(func=get_one_metric)
+
+    command_parser = subparsers.add_parser('command')
+    command_parser.add_argument('-c', '--command', type=str, help="Run an HAProxy CLI command")
+    command_parser.set_defaults(func=send_command)
+
+    args = parser.parse_args()
+    args.func(args)
 
 
 if __name__ == "__main__":
