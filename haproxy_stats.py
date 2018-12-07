@@ -2,60 +2,82 @@
 import argparse
 import csv
 import socket
-import sys
+
+
+# import sys
 
 
 class HAProxySocket:
 
     def __init__(self, socket_path):
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.socket_file = socket_path
 
     def cli(self, message):
         payload = ''
 
-        # Open the socket.
-        try:
-            self.sock.connect(self.socket_file)
-        except IOError as msg:
-            return msg
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            # Open the socket.
+            try:
+                s.connect(self.socket_file)
+            except (IOError, OSError) as msg:
+                return msg
 
-        # Send the CLI command to the socket.
-        message = "{}\n".format(message)
-        self.sock.send(bytearray(message, 'ASCII'))
+            # Send the CLI command to the socket.
+            message = "{0}\n".format(message)
+            s.send(bytearray(message, 'ASCII'))
 
-        # Get back a response and compile it line-by-line.
-        response = self.sock.recv(8192)
-        while response:
-            payload += response.decode('ASCII')
-            response = self.sock.recv(8192)
+            # Get back a response and compile it line-by-line.
+            response = s.recv(8192)
+            while response:
+                payload += response.decode('ASCII')
+                response = s.recv(8192)
 
-        # If there was a response return it.
-        if payload:
-            return payload
+            # If there was a response return it.
+            if payload != "":
+                return payload
 
-        # Close the socket connection.
-        self.sock.close()
+    def show_info(self):
+        info = dict()
+
+        payload = self.cli('show info')
+
+        for line in payload:
+            (data, value) = line.split(":")
+            info[data] = value.strip(' ')
+
+        return info
+
+    def show_stat(self):
+        stats = {}
+        csv_data = csv.DictReader(self.cli('show stat'))
+
+        for row in csv_data:
+            server = row['# pxname']
+            del row['# pxname']
+            del row['']
+            stats[server] = row
+
+        return stats
 
 
 def discovery(args):
     haproxy = HAProxySocket(args.socket_path)
-    results = haproxy.cli('show stats')
+    results = haproxy.show_stat()
 
     print(results)
 
 
 def get_all_metrics(args):
     haproxy = HAProxySocket(args.socket_path)
-    info = haproxy.cli('show info')
-    metrics = haproxy.cli('show stats')
+    info = haproxy.show_info()
+    stats = haproxy.show_stat()
 
-    print(info, metrics)
+    print(info, stats)
 
 
-def get_one_metric(args):
+def get_single_metric(args):
     haproxy = HAProxySocket(args.socket_path)
-    results = haproxy.cli('show stats')
+    results = haproxy.show_stat()
 
     print(results)
 
@@ -82,7 +104,7 @@ def main():
     one_metric_parser = subparsers.add_parser('one metric')
     one_metric_parser.add_argument("-e", "--endpoint", type=str, help="The frontend, backend, or server metrics")
     one_metric_parser.add_argument('-m', '--metric', type=str, help="The particular metric being gathered")
-    one_metric_parser.set_defaults(func=get_one_metric)
+    one_metric_parser.set_defaults(func=get_single_metric)
 
     command_parser = subparsers.add_parser('command')
     command_parser.add_argument('-c', '--command', type=str, help="Run an HAProxy CLI command")
